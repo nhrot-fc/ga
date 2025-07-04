@@ -75,6 +75,40 @@ export interface SimulationStatus {
   elapsedTime: string;
 }
 
+// Interface for vehicle breakdown request
+export interface VehicleBreakdownRequest {
+  vehicleId: string;
+  reason?: string;
+  estimatedRepairHours?: number;
+}
+
+// Interface for vehicle repair request
+export interface VehicleRepairRequest {
+  vehicleId: string;
+}
+
+// Interface for vehicle breakdown response
+export interface VehicleBreakdownResponse {
+  status: string;
+  message: string;
+  vehicleId: string;
+  reason: string;
+  incidentType: string;
+  breakdownTime: string;
+  estimatedRepairTime: string;
+  vehicleStatus: string;
+}
+
+// Interface for vehicle repair response
+export interface VehicleRepairResponse {
+  status: string;
+  message: string;
+  vehicleId: string;
+  repairTime: string;
+  resolvedIncidents: number;
+  vehicleStatus: string;
+}
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
 
 // API Client for simulation endpoints
@@ -127,6 +161,18 @@ export const simulationApi = {
   // Reset simulation
   resetSimulation: async (): Promise<void> => {
     await axios.post(`${BASE_URL}/simulation/reset`);
+  },
+
+  // Mark vehicle as broken down
+  breakdownVehicle: async (request: VehicleBreakdownRequest): Promise<VehicleBreakdownResponse> => {
+    const response = await axios.post(`${BASE_URL}/vehicle/breakdown`, request);
+    return response.data;
+  },
+  
+  // Repair a broken down vehicle
+  repairVehicle: async (request: VehicleRepairRequest): Promise<VehicleRepairResponse> => {
+    const response = await axios.post(`${BASE_URL}/vehicle/repair`, request);
+    return response.data;
   },
 
   // Check server health

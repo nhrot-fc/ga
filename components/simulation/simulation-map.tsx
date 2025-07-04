@@ -21,7 +21,9 @@ import {
   Info,
   RefreshCw,
   Play,
-  Pause
+  Pause,
+  AlertOctagon,
+  Wrench as WrenchIcon
 } from "lucide-react"
 
 // Import API client and types
@@ -33,6 +35,19 @@ import simulationApi, {
   Depot,
   EnvironmentResponse
 } from '@/lib/simulation-api'
+
+// Import Dialog components
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 // Tipos para los elementos del mapa
 type MapElement = {
@@ -141,6 +156,14 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [dataError, setDataError] = useState<string | null>(null)
   const [simulationRunning, setSimulationRunning] = useState<boolean>(false)
+  const [breakdownDialogOpen, setBreakdownDialogOpen] = useState(false)
+  const [breakdownReason, setBreakdownReason] = useState("")
+  const [repairHours, setRepairHours] = useState(2)
+  const [isBreakdownLoading, setIsBreakdownLoading] = useState(false)
+  const [isRepairLoading, setIsRepairLoading] = useState(false)
+  const [breakdownError, setBreakdownError] = useState<string | null>(null)
+  const [repairError, setRepairError] = useState<string | null>(null)
+  const [operationSuccess, setOperationSuccess] = useState<string | null>(null)
 
   // Function to toggle simulation
   const toggleSimulation = async (forceState?: boolean) => {
@@ -1276,6 +1299,90 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
     setIsDragging(false)
   }
 
+  // Handle vehicle breakdown
+  const handleBreakdownVehicle = async () => {
+    if (!selectedElement || selectedElement.type !== "vehicle") return;
+
+    setBreakdownDialogOpen(true);
+    setBreakdownReason("");
+    setRepairHours(2);
+    setBreakdownError(null);
+  }
+
+  // Submit vehicle breakdown
+  const submitBreakdownVehicle = async () => {
+    if (!selectedElement || selectedElement.type !== "vehicle") return;
+    
+    try {
+      setIsBreakdownLoading(true);
+      setBreakdownError(null);
+      
+      const response = await simulationApi.breakdownVehicle({
+        vehicleId: selectedElement.id,
+        reason: breakdownReason || "Mechanical failure",
+        estimatedRepairHours: repairHours
+      });
+      
+      // Close dialog
+      setBreakdownDialogOpen(false);
+      
+      // Show success message
+      setOperationSuccess(`Vehículo ${selectedElement.id} averiado: ${response.incidentType}, reparación estimada: ${response.estimatedRepairTime}`);
+      
+      // Auto-dismiss success message after 5 seconds
+      setTimeout(() => {
+        setOperationSuccess(null);
+      }, 5000);
+      
+      // Force a refresh of the data
+      const data = await simulationApi.getEnvironment();
+      transformDataToMapElements(data);
+      
+    } catch (error) {
+      console.error('Error al averiar vehículo:', error);
+      setBreakdownError(error instanceof Error ? error.message : 'Error desconocido al averiar vehículo');
+    } finally {
+      setIsBreakdownLoading(false);
+    }
+  }
+
+  // Handle vehicle repair
+  const handleRepairVehicle = async () => {
+    if (!selectedElement || selectedElement.type !== "vehicle") return;
+    
+    try {
+      setIsRepairLoading(true);
+      setRepairError(null);
+      
+      const response = await simulationApi.repairVehicle({
+        vehicleId: selectedElement.id
+      });
+      
+      // Show success message
+      setOperationSuccess(`Vehículo ${selectedElement.id} reparado. Estado: ${response.vehicleStatus}`);
+      
+      // Auto-dismiss success message after 5 seconds
+      setTimeout(() => {
+        setOperationSuccess(null);
+      }, 5000);
+      
+      // Force a refresh of the data
+      const data = await simulationApi.getEnvironment();
+      transformDataToMapElements(data);
+      
+    } catch (error) {
+      console.error('Error al reparar vehículo:', error);
+      setRepairError(error instanceof Error ? error.message : 'Error desconocido al reparar vehículo');
+      
+      // Auto-dismiss error message after 5 seconds
+      setTimeout(() => {
+        setRepairError(null);
+      }, 5000);
+    } finally {
+      setIsRepairLoading(false);
+    }
+  }
+
   return (
     <div ref={containerRef} className="relative border rounded-md overflow-hidden bg-white h-full w-full">
       <canvas
@@ -1414,6 +1521,96 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         </div>
       </div>
 
+      {/* Vehicle breakdown dialog */}
+      <Dialog open={breakdownDialogOpen} onOpenChange={setBreakdownDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Simular Avería de Vehículo</DialogTitle>
+            <DialogDescription>
+              Configure los detalles de la avería para el vehículo {selectedElement?.id}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="reason">Razón de la avería</Label>
+              <Input 
+                id="reason" 
+                value={breakdownReason} 
+                onChange={(e) => setBreakdownReason(e.target.value)} 
+                placeholder="Mechanical failure"
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="hours">Horas estimadas de reparación</Label>
+              <Input 
+                id="hours" 
+                type="number" 
+                value={repairHours} 
+                onChange={(e) => setRepairHours(parseInt(e.target.value, 10) || 2)}
+                min={1}
+                max={48}
+              />
+              <div className="text-xs text-muted-foreground mt-1">
+                TI1: ≤ 2 horas | TI2: 3-24 horas | TI3: &gt; 24 horas
+              </div>
+            </div>
+          </div>
+          
+          {breakdownError && (
+            <div className="bg-red-50 text-red-700 p-2 rounded-md text-sm">
+              {breakdownError}
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setBreakdownDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={submitBreakdownVehicle}
+              disabled={isBreakdownLoading}
+            >
+              {isBreakdownLoading ? "Procesando..." : "Confirmar Avería"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Operation success message */}
+      {operationSuccess && (
+        <div className="absolute top-20 left-4 bg-green-50 text-green-700 p-3 rounded-md shadow-sm border border-green-200 flex items-center justify-between">
+          <p className="text-sm">{operationSuccess}</p>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="ml-2 h-6 w-6 p-0"
+            onClick={() => setOperationSuccess(null)}
+          >
+            ×
+          </Button>
+        </div>
+      )}
+
+      {/* Repair error message */}
+      {repairError && (
+        <div className="absolute top-20 left-4 bg-red-50 text-red-700 p-3 rounded-md shadow-sm border border-red-200 flex items-center justify-between">
+          <p className="text-sm">{repairError}</p>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="ml-2 h-6 w-6 p-0"
+            onClick={() => setRepairError(null)}
+          >
+            ×
+          </Button>
+        </div>
+      )}
+
       {/* Panel de detalles para elementos seleccionados */}
       {selectedElement && (
         <div className="absolute top-4 left-4 bg-white p-3 rounded-md shadow-md border max-w-xs">
@@ -1448,10 +1645,29 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           {selectedElement.type === "vehicle" && (
             <div className="mt-2 space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="destructive" size="sm" className="w-full text-xs">
-                  <AlertTriangle className="mr-1 h-3 w-3" />
-                  Simular Avería
-                </Button>
+                {selectedElement.status === "en-ruta" ? (
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    className="w-full text-xs"
+                    onClick={handleBreakdownVehicle}
+                    disabled={isBreakdownLoading}
+                  >
+                    <AlertOctagon className="mr-1 h-3 w-3" />
+                    Simular Avería
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full text-xs"
+                    onClick={handleRepairVehicle}
+                    disabled={isRepairLoading}
+                  >
+                    <WrenchIcon className="mr-1 h-3 w-3" />
+                    Reparar Vehículo
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" className="w-full text-xs">
                   <Truck className="mr-1 h-3 w-3" />
                   Ver Ruta
