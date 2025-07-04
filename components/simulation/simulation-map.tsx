@@ -285,7 +285,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         x: mainDepot.position.x,
         y: mainDepot.position.y,
         label: "Planta Principal",
-        details: `ID: ${mainDepot.id} | GLP: ${mainDepot.glp.current}/${mainDepot.glp.capacity} | Recarga: ${mainDepot.canRefuel ? "Sí" : "No"}`
+        details: `ID: ${mainDepot.id} | GLP Actual: ${mainDepot.glp.current}/${mainDepot.glp.capacity} (${((mainDepot.glp.current / mainDepot.glp.capacity) * 100).toFixed(1)}%) | Recarga: ${mainDepot.canRefuel ? "Sí" : "No"}`
       });
     }
 
@@ -297,19 +297,41 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         x: depot.position.x,
         y: depot.position.y,
         label: depot.id,
-        details: `ID: ${depot.id} | GLP: ${depot.glp.current}/${depot.glp.capacity} | Recarga: ${depot.canRefuel ? "Sí" : "No"}`
+        details: `ID: ${depot.id} | GLP Actual: ${depot.glp.current}/${depot.glp.capacity} (${((depot.glp.current / depot.glp.capacity) * 100).toFixed(1)}%) | Recarga: ${depot.canRefuel ? "Sí" : "No"}`
       });
     });
 
-    // Add orders as customers
+    // Add orders as customers with more detailed information
     data.orders.forEach((order) => {
+      // Calcular porcentaje de entrega si hay información disponible
+      const requestedGlp = order.glp?.requested || 0;
+      // Usar remaining en lugar de delivered (que no existe en el tipo)
+      const remainingGlp = order.glp?.remaining || 0;
+      const deliveredGlp = requestedGlp - remainingGlp; // Calcular lo entregado como solicitado - restante
+      const deliveryPercentage = requestedGlp > 0 ? ((requestedGlp - remainingGlp) / requestedGlp) * 100 : 0;
+      
+      // Formatear estado de entrega
+      let deliveryStatus = "Pendiente";
+      if (deliveryPercentage >= 100) {
+        deliveryStatus = "Completado";
+      } else if (deliveryPercentage > 0) {
+        deliveryStatus = `En progreso (${deliveryPercentage.toFixed(1)}%)`;
+      }
+      
+      // Usar información de vencimiento en lugar de timeRemaining (que no existe en el tipo)
+      const timeInfo = order.isOverdue
+        ? "Tiempo agotado"
+        : deliveryPercentage >= 100
+          ? "Entrega completada"
+          : "Pendiente de asignación";
+      
       elements.push({
         id: order.id,
         type: "customer",
         x: order.position.x,
         y: order.position.y,
         label: `Pedido: ${order.id.substring(0, 10)}`,
-        details: `Solicitud: ${order.glp?.requested || "N/A"} GLP | Entregado: ${order.isOverdue ? "No" : "Sí"} | Vencido: ${order.isOverdue ? "Sí" : "No"}`
+        details: `Solicitud: ${requestedGlp} GLP | Entregado: ${deliveredGlp} GLP (${deliveryPercentage.toFixed(1)}%) | Estado: ${deliveryStatus} | ${timeInfo} | Vencido: ${order.isOverdue ? "Sí" : "No"}`
       });
     });
 
@@ -965,9 +987,17 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           const order = environmentData?.orders.find(o => o.id === element.id);
           if (order) {
             const customerSize = 14 * scale * zoomScale;
+            
+            // Calcular datos de progreso para visualización
+            const requestedGlp = order.glp?.requested || 0;
+            const remainingGlp = order.glp?.remaining || 0;
+            const deliveredGlp = requestedGlp - remainingGlp; // Calcular lo entregado como solicitado - restante
+            const deliveryPercentage = requestedGlp > 0 ? ((requestedGlp - remainingGlp) / requestedGlp) * 100 : 0;
 
             // Draw status indicator with improved style
             const priorityColor = order.isOverdue ? "#ef4444" : // rojo para vencidos
+              deliveryPercentage >= 100 ? "#10b981" : // verde para completados
+              deliveryPercentage > 0 ? "#3b82f6" : // azul para en progreso
               "#f59e0b"; // ámbar para pendientes
 
             // Círculo de estado con mejor visualización
@@ -1003,10 +1033,26 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               ctx.moveTo(x + customerSize * 1.2 + 3.5 * zoomScale, y - customerSize - 3.5 * zoomScale);
               ctx.lineTo(x + customerSize * 1.2 - 3.5 * zoomScale, y - customerSize + 3.5 * zoomScale);
               ctx.stroke();
+            } 
+            // Si está completado, mostrar un check
+            else if (deliveryPercentage >= 100) {
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 2.5 * zoomScale;
+              ctx.beginPath();
+              ctx.moveTo(x + customerSize * 1.2 - 3.5 * zoomScale, y - customerSize);
+              ctx.lineTo(x + customerSize * 1.2 - 1 * zoomScale, y - customerSize + 3 * zoomScale);
+              ctx.lineTo(x + customerSize * 1.2 + 3.5 * zoomScale, y - customerSize - 3 * zoomScale);
+              ctx.stroke();
             }
-
+            // Si está en progreso, mostrar un círculo parcialmente lleno
+            else if (deliveryPercentage > 0) {
+              ctx.fillStyle = "#ffffff";
+              ctx.beginPath();
+              ctx.arc(x + customerSize * 1.2, y - customerSize, 3 * zoomScale, 0, Math.PI * 2);
+              ctx.fill();
+            }
             // Si no está ni entregado ni vencido, mostrar exclamación
-            if (!order.isOverdue) {
+            else {
               ctx.fillStyle = "#ffffff";
               ctx.beginPath();
               // Punto de exclamación
@@ -1015,12 +1061,19 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               ctx.fillRect(x + customerSize * 1.2 - 1 * zoomScale, y - customerSize - 3.5 * zoomScale, 2 * zoomScale, 4 * zoomScale);
             }
 
-            // Mostrar demanda de GLP como texto pequeño
+            // Mostrar información de GLP como texto pequeño
             ctx.fillStyle = "white";
             ctx.font = `bold ${8 * zoomScale}px sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            const glpText = order.glp?.requested?.toString() || "N/A";
+            
+            // Mostrar información de progreso si hay entrega parcial
+            let glpText = "";
+            if (deliveryPercentage > 0 && deliveryPercentage < 100) {
+              glpText = `${deliveredGlp}/${requestedGlp}`;
+            } else {
+              glpText = requestedGlp.toString();
+            }
 
             // Fondo semi-transparente para el texto
             const textWidth = ctx.measureText(glpText).width;

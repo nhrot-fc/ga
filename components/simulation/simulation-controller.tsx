@@ -1,11 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Slider } from "@/components/ui/slider"
-import { FastForward, Pause, Play, RotateCcw, Timer } from "lucide-react"
+import { FastForward, Pause, Play, RotateCcw, Timer, Clock } from "lucide-react"
 import simulationApi, { SimulationStatus } from "@/lib/simulation-api"
 
 interface SimulationControllerProps {
@@ -15,11 +13,48 @@ interface SimulationControllerProps {
 
 export function SimulationController({ onSimulationChange, layout = "vertical" }: SimulationControllerProps) {
   const [isRunning, setIsRunning] = useState(false)
-  const [speed, setSpeed] = useState([1])
   const [currentTime, setCurrentTime] = useState("00:00")
   const [isLoading, setIsLoading] = useState(false)
   const [hasError, setHasError] = useState(false)
   const [status, setStatus] = useState<SimulationStatus | null>(null)
+  const [elapsedTime, setElapsedTime] = useState(0) // Tiempo en segundos desde que se cargó el componente
+  const startTimeRef = useRef<number>(Date.now()) // Tiempo de referencia
+
+  // Iniciar contador de tiempo transcurrido con persistencia en sessionStorage
+  useEffect(() => {
+    // Recuperar tiempo inicial de sessionStorage o usar el actual
+    const storedStartTime = sessionStorage.getItem('simulationStartTime');
+    const storedElapsedTime = sessionStorage.getItem('simulationElapsedTime');
+    
+    // Si hay un tiempo guardado, usarlo como base
+    if (storedStartTime && storedElapsedTime) {
+      startTimeRef.current = parseInt(storedStartTime);
+      setElapsedTime(parseInt(storedElapsedTime));
+    } else {
+      // Si es la primera vez, guardar el tiempo actual
+      startTimeRef.current = Date.now();
+      sessionStorage.setItem('simulationStartTime', startTimeRef.current.toString());
+      sessionStorage.setItem('simulationElapsedTime', '0');
+    }
+    
+    // Actualizar el contador cada segundo
+    const intervalId = setInterval(() => {
+      const secondsElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      setElapsedTime(secondsElapsed);
+      // Guardar el tiempo transcurrido en sessionStorage
+      sessionStorage.setItem('simulationElapsedTime', secondsElapsed.toString());
+    }, 1000);
+    
+    return () => clearInterval(intervalId);
+  }, []);
+
+  // Formatear tiempo transcurrido (HH:MM:SS)
+  const formatElapsedTime = (seconds: number): string => {
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
 
   // Fetch simulation status
   useEffect(() => {
@@ -84,6 +119,13 @@ export function SimulationController({ onSimulationChange, layout = "vertical" }
       setIsRunning(false);
       setCurrentTime("00:00");
       
+      // Reiniciar también el contador de tiempo transcurrido
+      const newStartTime = Date.now();
+      startTimeRef.current = newStartTime;
+      sessionStorage.setItem('simulationStartTime', newStartTime.toString());
+      sessionStorage.setItem('simulationElapsedTime', '0');
+      setElapsedTime(0);
+      
       if (onSimulationChange) {
         onSimulationChange(false);
       }
@@ -137,27 +179,6 @@ export function SimulationController({ onSimulationChange, layout = "vertical" }
           </Button>
         </div>
         
-        <div className="flex-1 max-w-[200px] mx-2 flex items-center gap-2">
-          <span className="text-xs font-medium whitespace-nowrap">Velocidad:</span>
-          <Slider 
-            value={speed} 
-            min={1} 
-            max={10} 
-            step={1} 
-            onValueChange={(value) => {
-              setSpeed(value);
-              if (Math.abs(value[0] - (status?.speed || 1)) >= 1) {
-                simulationApi.setSimulationSpeed(value[0]).catch(err => 
-                  console.error("Error setting simulation speed:", err)
-                );
-              }
-            }}
-            disabled={isLoading} 
-            className="h-4"
-          />
-          <span className="text-xs font-bold">{speed[0]}x</span>
-        </div>
-        
         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
           <div className="bg-slate-100 px-2 py-1 rounded text-center flex items-center gap-1">
             <div className="text-xs text-slate-500">Estado:</div>
@@ -167,9 +188,10 @@ export function SimulationController({ onSimulationChange, layout = "vertical" }
           </div>
           
           <div className="bg-slate-100 px-2 py-1 rounded text-center flex items-center gap-1">
+            <Clock className="h-3 w-3 text-slate-500" />
             <div className="text-xs text-slate-500">Transcurrido:</div>
             <div className="text-xs font-bold text-slate-700">
-              {status?.elapsedTime || "-"}
+              {formatElapsedTime(elapsedTime)}
             </div>
           </div>
         </div>
@@ -191,29 +213,6 @@ export function SimulationController({ onSimulationChange, layout = "vertical" }
           <div className="text-3xl font-bold text-center mb-4">{currentTime}</div>
           
           <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-sm font-medium">Velocidad</label>
-                <span className="text-sm">{speed[0]}x</span>
-              </div>
-              <Slider 
-                value={speed} 
-                min={1} 
-                max={10} 
-                step={1} 
-                onValueChange={(value) => {
-                  setSpeed(value);
-                  // Only update speed in API if it has changed significantly
-                  if (Math.abs(value[0] - (status?.speed || 1)) >= 1) {
-                    simulationApi.setSimulationSpeed(value[0]).catch(err => 
-                      console.error("Error setting simulation speed:", err)
-                    );
-                  }
-                }}
-                disabled={isLoading} 
-              />
-            </div>
-
             <div className="flex justify-between gap-2">
               <Button 
                 variant="outline" 
@@ -267,22 +266,21 @@ export function SimulationController({ onSimulationChange, layout = "vertical" }
                   {status?.running ? "ACTIVO" : "PAUSADO"}
                 </div>
               </div>
-              <div className="bg-slate-50 p-2 rounded-md text-center">
-                <div className="text-xs text-slate-500">Velocidad</div>
-                <div className="text-xl font-bold text-slate-700">
-                  {status?.speed || "-"}x
-                </div>
-              </div>
+              
               <div className="bg-slate-50 p-2 rounded-md text-center">
                 <div className="text-xs text-slate-500">Hora Simulación</div>
                 <div className="text-xl font-bold text-slate-700">
                   {status?.currentTime || "-"}
                 </div>
               </div>
-              <div className="bg-slate-50 p-2 rounded-md text-center">
-                <div className="text-xs text-slate-500">Tiempo Transcurrido</div>
+              
+              <div className="bg-slate-50 p-2 rounded-md text-center col-span-2">
+                <div className="flex items-center justify-center gap-2">
+                  <Clock className="h-4 w-4 text-slate-500" />
+                  <div className="text-xs text-slate-500">Tiempo Transcurrido</div>
+                </div>
                 <div className="text-xl font-bold text-slate-700">
-                  {status?.elapsedTime || "-"}
+                  {formatElapsedTime(elapsedTime)}
                 </div>
               </div>
             </div>
