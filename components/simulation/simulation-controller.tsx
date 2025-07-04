@@ -10,9 +10,10 @@ import simulationApi, { SimulationStatus } from "@/lib/simulation-api"
 
 interface SimulationControllerProps {
   onSimulationChange?: (isRunning: boolean) => void;
+  layout?: "vertical" | "horizontal";
 }
 
-export function SimulationController({ onSimulationChange }: SimulationControllerProps) {
+export function SimulationController({ onSimulationChange, layout = "vertical" }: SimulationControllerProps) {
   const [isRunning, setIsRunning] = useState(false)
   const [speed, setSpeed] = useState([1])
   const [currentTime, setCurrentTime] = useState("00:00")
@@ -95,6 +96,88 @@ export function SimulationController({ onSimulationChange }: SimulationControlle
     }
   };
 
+  // Render para layout horizontal (compacto)
+  if (layout === "horizontal") {
+    return (
+      <div className="flex flex-col sm:flex-row items-center gap-3 justify-between">
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={resetSimulation} 
+            disabled={isLoading}
+            className="h-8 w-8 p-0"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </Button>
+          
+          <Button 
+            variant={isRunning ? "secondary" : "default"} 
+            size="sm"
+            onClick={toggleSimulation}
+            disabled={isLoading}
+            className="h-8"
+          >
+            {isLoading ? (
+              <span className="flex items-center">
+                <div className="animate-spin mr-1 h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div>
+                <span className="text-xs">Cargando...</span>
+              </span>
+            ) : isRunning ? (
+              <>
+                <Pause className="mr-1 h-3 w-3" />
+                <span className="text-xs">Pausar</span>
+              </>
+            ) : (
+              <>
+                <Play className="mr-1 h-3 w-3" />
+                <span className="text-xs">Iniciar</span>
+              </>
+            )}
+          </Button>
+        </div>
+        
+        <div className="flex-1 max-w-[200px] mx-2 flex items-center gap-2">
+          <span className="text-xs font-medium whitespace-nowrap">Velocidad:</span>
+          <Slider 
+            value={speed} 
+            min={1} 
+            max={10} 
+            step={1} 
+            onValueChange={(value) => {
+              setSpeed(value);
+              if (Math.abs(value[0] - (status?.speed || 1)) >= 1) {
+                simulationApi.setSimulationSpeed(value[0]).catch(err => 
+                  console.error("Error setting simulation speed:", err)
+                );
+              }
+            }}
+            disabled={isLoading} 
+            className="h-4"
+          />
+          <span className="text-xs font-bold">{speed[0]}x</span>
+        </div>
+        
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <div className="bg-slate-100 px-2 py-1 rounded text-center flex items-center gap-1">
+            <div className="text-xs text-slate-500">Estado:</div>
+            <div className={`text-xs font-bold ${status?.running ? "text-green-600" : "text-slate-500"}`}>
+              {status?.running ? "ACTIVO" : "PAUSADO"}
+            </div>
+          </div>
+          
+          <div className="bg-slate-100 px-2 py-1 rounded text-center flex items-center gap-1">
+            <div className="text-xs text-slate-500">Transcurrido:</div>
+            <div className="text-xs font-bold text-slate-700">
+              {status?.elapsedTime || "-"}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render para layout vertical (original)
   return (
     <div className="space-y-4">
       <Card>

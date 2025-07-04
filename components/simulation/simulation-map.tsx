@@ -1050,13 +1050,13 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           // Obtener el tipo de vehículo para colorear apropiadamente
           const vehicle = environmentData?.vehicles.find(v => v.id === element.id);
           const vehicleType = vehicle?.type || "";
-
+          
           // Determinar color basado en tipo de vehículo y estado
           let vehicleColor = "#10b981"; // Verde por defecto
           if (element.status !== "en-ruta") {
             vehicleColor = "#ef4444"; // Rojo para averiados
           } else {
-            // Colores por tipo de vehículo
+            // Colores por tipo de vehículo solo si está en ruta
             if (vehicleType === "TA") vehicleColor = "#ef4444";      // Rojo
             else if (vehicleType === "TB") vehicleColor = "#3b82f6"; // Azul
             else if (vehicleType === "TC") vehicleColor = "#f59e0b"; // Ámbar

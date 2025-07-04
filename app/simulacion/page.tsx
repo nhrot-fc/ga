@@ -54,39 +54,28 @@ export default function SimulacionPage() {
         </TabsList>
 
         <TabsContent value="mapa" className="space-y-4">
-          <Card className="mb-4">
-            <CardHeader className="py-3">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex-col">
+          <div className="flex flex-col space-y-4">
+            {/* Tarjeta principal que contiene tanto el mapa como los controles compactos */}
+            <Card>
+              {/* Cabecera con título y selección de modo */}
+              <CardHeader className="py-3 border-b">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center">
-                    <CardTitle>Controles del Visualizador</CardTitle>
+                    <CardTitle className="text-lg">Controles del Visualizador</CardTitle>
                     {scenario !== "tiempo-real" ? (
-                      <Badge variant="secondary" className="ml-4 px-3 py-1 bg-blue-100 text-blue-800">
+                      <Badge variant="secondary" className="ml-2 px-2 py-0 text-xs bg-blue-100 text-blue-800">
                         Modo simulación
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="ml-4 px-3 py-1">
+                      <Badge variant="outline" className="ml-2 px-2 py-0 text-xs">
                         Tiempo real
                       </Badge>
                     )}
                   </div>
                   
-                  <CardDescription className="flex items-center mt-1">
-                    <Calendar className="h-4 w-4 mr-1" />
-                    {scenario === "tiempo-real" ? (
-                      <>Operaciones del día: {formattedDate}</>
-                    ) : scenario === "simulacion-semanal" ? (
-                      <>Periodo: 7 días | Fecha inicial: {formattedDate}</>
-                    ) : (
-                      <>Periodo: Simulación continua | Fecha inicial: {formattedDate}</>
-                    )}
-                  </CardDescription>
-                </div>
-                
-                <div className="flex lg:items-center gap-4 flex-col lg:flex-row">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     <Select value={scenario} onValueChange={(value) => setScenario(value)}>
-                      <SelectTrigger className="w-[180px]">
+                      <SelectTrigger className="w-[180px] h-8 text-sm">
                         <SelectValue placeholder="Seleccionar modo" />
                       </SelectTrigger>
                       <SelectContent>
@@ -95,39 +84,37 @@ export default function SimulacionPage() {
                         <SelectItem value="simulacion-continua">Simulación continua</SelectItem>
                       </SelectContent>
                     </Select>
+                    
+                    {scenario !== "tiempo-real" && (
+                      <div className="flex items-center bg-slate-50 px-2 py-1 rounded-md">
+                        <Clock className="h-3 w-3 mr-1 text-slate-500" />
+                        <span className="text-sm font-medium">{currentTime}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              
+              {/* Contenido con el mapa y los controles horizontales */}
+              <CardContent className="p-0">
+                <div className="flex flex-col">
+                  {/* Panel de controles horizontales */}
+                  <div className="p-2 bg-slate-50 border-b">
+                    <div className="w-full">
+                      <SimulationController 
+                        onSimulationChange={handleSimulationChange} 
+                        layout="horizontal" 
+                      />
+                    </div>
                   </div>
                   
-                  {scenario !== "tiempo-real" && (
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col items-center border rounded-md px-3 py-1">
-                        <div className="flex items-center text-sm text-muted-foreground">
-                          <Clock className="h-3 w-3 mr-1" /> Hora actual
-                        </div>
-                        <div className="text-2xl font-bold text-center">
-                          {currentTime}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="col-span-1 md:col-span-3">
-              <Card>
-                <CardContent className="p-0">
-                  <div className="h-[calc(100vh-280px)] min-h-[600px]">
+                  {/* Mapa de simulación a pantalla completa */}
+                  <div className="h-[calc(100vh-300px)] min-h-[500px]">
                     <SimulationMap onTimeUpdate={handleTimeUpdate} />
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-            
-            <div className="col-span-1">
-              <SimulationController onSimulationChange={handleSimulationChange} />
-            </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
