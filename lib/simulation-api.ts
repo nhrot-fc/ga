@@ -6,33 +6,56 @@ export interface Position {
   y: number;
 }
 
+// Resource level type for fuel and GLP
+export interface ResourceLevel {
+  current: number;
+  capacity: number;
+  percentage: number;
+}
+
 export interface Vehicle {
   id: string;
   type: string;
   status: string;
   position: Position;
-  fuel: number;
-  glp: number;
-  path?: Position[];
+  fuel: ResourceLevel;
+  glp: ResourceLevel;
+  currentPath?: {
+    actionType: string;
+    startTime: string;
+    endTime: string;
+    path: Position[];
+  };
 }
 
 export interface Order {
   id: string;
   position: Position;
-  glpRequest: number;
-  delivered: boolean;
-  overdue: boolean;
+  arriveTime?: string;
+  dueTime?: string;
+  glp?: {
+    requested: number;
+    remaining: number;
+  };
+  isOverdue: boolean;
 }
 
 export interface Blockage {
-  active: boolean;
-  points: Position[];
+  id: string;
+  startTime: string;
+  endTime: string;
+  positions: Position[];
 }
 
 export interface Depot {
   id: string;
   position: Position;
   isMain: boolean;
+  canRefuel: boolean;
+  glp: {
+    current: number;
+    capacity: number;
+  };
 }
 
 export interface EnvironmentResponse {
@@ -65,25 +88,25 @@ export const simulationApi = {
   // Fetch vehicles only
   getVehicles: async (): Promise<Vehicle[]> => {
     const response = await axios.get(`${BASE_URL}/vehicles`);
-    return response.data;
+    return response.data.vehicles;
   },
 
   // Fetch orders only
   getOrders: async (): Promise<Order[]> => {
     const response = await axios.get(`${BASE_URL}/orders`);
-    return response.data;
+    return response.data.orders;
   },
 
   // Fetch blockages only
   getBlockages: async (): Promise<Blockage[]> => {
     const response = await axios.get(`${BASE_URL}/blockages`);
-    return response.data;
+    return response.data.blockages;
   },
 
   // Get simulation status
   getSimulationStatus: async (): Promise<SimulationStatus> => {
     const response = await axios.get(`${BASE_URL}/simulation/status`);
-    return response.data;
+    return response.data.status;
   },
 
   // Start or resume simulation

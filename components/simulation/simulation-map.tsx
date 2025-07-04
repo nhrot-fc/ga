@@ -4,20 +4,20 @@ import type React from "react"
 
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { 
-  AlertTriangle, 
-  Minus, 
-  Plus, 
-  Truck, 
-  Package, 
-  Warehouse as WarehouseIcon, 
-  Building, 
-  User, 
-  ArrowLeft, 
-  ArrowRight, 
-  ArrowUp, 
-  ArrowDown, 
-  Ban, 
+import {
+  AlertTriangle,
+  Minus,
+  Plus,
+  Truck,
+  Package,
+  Warehouse as WarehouseIcon,
+  Building,
+  User,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  Ban,
   Info,
   RefreshCw,
   Play,
@@ -25,13 +25,13 @@ import {
 } from "lucide-react"
 
 // Import API client and types
-import simulationApi, { 
-  Position, 
-  Vehicle, 
-  Order, 
-  Blockage, 
-  Depot, 
-  EnvironmentResponse 
+import simulationApi, {
+  Position,
+  Vehicle,
+  Order,
+  Blockage,
+  Depot,
+  EnvironmentResponse
 } from '@/lib/simulation-api'
 
 // Tipos para los elementos del mapa
@@ -44,6 +44,60 @@ type MapElement = {
   status?: string
   direction?: "north" | "south" | "east" | "west"
   details?: string
+}
+
+// Updated type for Fuel and GLP
+type ResourceLevel = {
+  current: number
+  capacity: number
+  percentage: number
+}
+
+// Updated Vehicle type
+type VehicleData = {
+  id: string
+  type: string
+  status: string
+  position: Position
+  fuel: ResourceLevel
+  glp: ResourceLevel
+  currentPath?: {
+    actionType: string
+    startTime: string
+    endTime: string
+    path: Position[]
+  }
+}
+
+// Updated Blockage type
+type BlockageData = {
+  id: string
+  startTime: string
+  endTime: string
+  positions: Position[]
+}
+
+// Updated Depot type
+type DepotData = {
+  id: string
+  position: Position
+  isMain: boolean
+  canRefuel: boolean
+  glp: {
+    current: number
+    capacity: number
+  }
+}
+
+// Updated Environment Response type
+type EnvironmentData = {
+  timestamp: string
+  simulationTime: string
+  simulationRunning: boolean
+  vehicles: VehicleData[]
+  orders: Order[]
+  blockages: BlockageData[]
+  depots: DepotData[]
 }
 
 // Tipo para las rutas
@@ -79,7 +133,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 })
-  const [environmentData, setEnvironmentData] = useState<EnvironmentResponse | null>(null)
+  const [environmentData, setEnvironmentData] = useState<EnvironmentData | null>(null)
   const [mapElements, setMapElements] = useState<MapElement[]>([])
   const [blockedRoads, setBlockedRoads] = useState<BlockedRoad[]>([])
   const [simulationTime, setSimulationTime] = useState<string>("")
@@ -98,7 +152,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         await simulationApi.pauseSimulation();
         setSimulationRunning(false);
       }
-      
+
       // Notify parent component about state change
       if (onTimeUpdate) {
         onTimeUpdate(simulationTime, forceState === undefined ? !simulationRunning : forceState);
@@ -115,25 +169,26 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
       try {
         setIsLoading(true);
         setDataError(null);
-        
+
+        // Assuming simulationApi.getEnvironment() returns EnvironmentData
         const data = await simulationApi.getEnvironment();
-        
+
         setEnvironmentData(data);
         setSimulationTime(data.simulationTime);
         setSimulationRunning(data.simulationRunning);
-        
+
         // Notify parent component about time update if callback exists
         if (onTimeUpdate) {
           onTimeUpdate(data.simulationTime, data.simulationRunning);
         }
-        
+
         // Log vehicles for debugging
         if (data.vehicles?.length > 0) {
           console.log(`📊 Recibidos ${data.vehicles.length} vehículos del API`);
         } else {
           console.warn("⚠️ No se recibieron vehículos del API");
         }
-        
+
         // Transform API data to map elements
         transformDataToMapElements(data);
         setIsLoading(false);
@@ -156,7 +211,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
   }, [onTimeUpdate]);
 
   // Transform API data to map elements
-  const transformDataToMapElements = (data: EnvironmentResponse) => {
+  const transformDataToMapElements = (data: EnvironmentData) => {
     const elements: MapElement[] = [];
     const newBlockedRoads: BlockedRoad[] = [];
     const newRoutes: Route[] = [];
@@ -164,7 +219,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
     // Add vehicles
     data.vehicles.forEach((vehicle) => {
       const direction = determineDirection(vehicle);
-      
+
       elements.push({
         id: vehicle.id,
         type: "vehicle",
@@ -173,21 +228,21 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         label: `${vehicle.id} (${vehicle.type})`,
         status: vehicle.status === "AVAILABLE" ? "en-ruta" : "averiado",
         direction,
-        details: `Tipo: ${vehicle.type} | Estado: ${vehicle.status} | Combustible: ${vehicle.fuel.toFixed(2)} | GLP: ${vehicle.glp}`
+        details: `Tipo: ${vehicle.type} | Estado: ${vehicle.status} | Combustible: ${vehicle.fuel.current.toFixed(2)}/${vehicle.fuel.capacity.toFixed(2)} (${vehicle.fuel.percentage.toFixed(1)}%) | GLP: ${vehicle.glp.current}/${vehicle.glp.capacity} (${vehicle.glp.percentage.toFixed(1)}%)`
       });
 
-      // If vehicle has a path, add it as a route
-      if (vehicle.path && vehicle.path.length > 1) {
+      // If vehicle has a currentPath, add it as a route
+      if (vehicle.currentPath && vehicle.currentPath.path.length > 1) {
         // Create waypoints from the path
-        const waypoints = vehicle.path.map(pos => ({ x: pos.x, y: pos.y }));
-        
+        const waypoints = vehicle.currentPath.path.map(pos => ({ x: pos.x, y: pos.y }));
+
         // Determine color based on vehicle type
         let color = "#10b981"; // Default green
         if (vehicle.type === "TA") color = "#ef4444";      // Red
         else if (vehicle.type === "TB") color = "#3b82f6"; // Blue
         else if (vehicle.type === "TC") color = "#f59e0b"; // Amber
         else if (vehicle.type === "TD") color = "#8b5cf6"; // Purple
-        
+
         newRoutes.push({
           id: `route-${vehicle.id}`,
           from: "origin",
@@ -207,7 +262,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         x: mainDepot.position.x,
         y: mainDepot.position.y,
         label: "Planta Principal",
-        details: `ID: ${mainDepot.id}`
+        details: `ID: ${mainDepot.id} | GLP: ${mainDepot.glp.current}/${mainDepot.glp.capacity} | Recarga: ${mainDepot.canRefuel ? "Sí" : "No"}`
       });
     }
 
@@ -219,7 +274,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         x: depot.position.x,
         y: depot.position.y,
         label: depot.id,
-        details: `ID: ${depot.id}`
+        details: `ID: ${depot.id} | GLP: ${depot.glp.current}/${depot.glp.capacity} | Recarga: ${depot.canRefuel ? "Sí" : "No"}`
       });
     });
 
@@ -231,39 +286,38 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         x: order.position.x,
         y: order.position.y,
         label: `Pedido: ${order.id.substring(0, 10)}`,
-        details: `Solicitud: ${order.glpRequest} GLP | Entregado: ${order.delivered ? "Sí" : "No"} | Vencido: ${order.overdue ? "Sí" : "No"}`
+        details: `Solicitud: ${order.glp?.requested || "N/A"} GLP | Entregado: ${order.isOverdue ? "No" : "Sí"} | Vencido: ${order.isOverdue ? "Sí" : "No"}`
       });
     });
-    
+
     // Process blockages to create blocked roads
     // First create a unique set of blockages to avoid duplications in the API
     const uniqueBlockages = new Map();
-    
+
     data.blockages
-      .filter(blockage => blockage.active)
       .forEach((blockage) => {
-        // Create a key based on the points to detect duplicates
-        const key = JSON.stringify(blockage.points);
-        
+        // Create a key based on the ID to detect duplicates
+        const key = blockage.id;
+
         if (!uniqueBlockages.has(key)) {
           uniqueBlockages.set(key, blockage);
         }
       });
-    
+
     // Convert unique blockages to blocked roads
     Array.from(uniqueBlockages.values()).forEach((blockage, index) => {
-      if (blockage.points.length >= 2) {
+      if (blockage.positions.length >= 2) {
         // For each blockage, create segments between consecutive points
-        for (let i = 0; i < blockage.points.length - 1; i++) {
-          const from = blockage.points[i];
-          const to = blockage.points[i + 1];
-          
+        for (let i = 0; i < blockage.positions.length - 1; i++) {
+          const from = blockage.positions[i];
+          const to = blockage.positions[i + 1];
+
           newBlockedRoads.push({
-            id: `block-${index}-${i}`,
+            id: `block-${blockage.id}-${i}`,
             from: { x: from.x, y: from.y },
             to: { x: to.x, y: to.y },
             label: "Carretera bloqueada",
-            details: `Bloqueo activo`
+            details: `Bloqueo activo desde ${blockage.startTime} hasta ${blockage.endTime}`
           });
         }
       }
@@ -273,12 +327,28 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
     setBlockedRoads(newBlockedRoads);
     setRoutes(newRoutes);
   };
-  
+
   // Helper function to determine vehicle direction based on its position history
-  // This is a placeholder - in a real implementation, you'd track position history
-  // or get direction from the API
-  const determineDirection = (vehicle: Vehicle): "north" | "south" | "east" | "west" => {
-    // For now, simply assign a direction based on vehicle ID
+  const determineDirection = (vehicle: VehicleData): "north" | "south" | "east" | "west" => {
+    // If vehicle has a current path, determine direction from it
+    if (vehicle.currentPath && vehicle.currentPath.path.length > 1) {
+      // Compare current position with next path point
+      const currentPos = vehicle.position;
+      const nextPos = vehicle.currentPath.path[1]; // Next position in path
+
+      // Calculate direction vector
+      const dx = nextPos.x - currentPos.x;
+      const dy = nextPos.y - currentPos.y;
+
+      // Determine dominant direction
+      if (Math.abs(dx) > Math.abs(dy)) {
+        return dx > 0 ? "east" : "west";
+      } else {
+        return dy > 0 ? "north" : "south";
+      }
+    }
+
+    // Fallback if no path: assign a direction based on vehicle ID
     const directions: ("north" | "south" | "east" | "west")[] = ["north", "south", "east", "west"];
     const hash = vehicle.id.charCodeAt(vehicle.id.length - 1) % directions.length;
     return directions[hash];
@@ -325,7 +395,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
       }
 
       console.log("🔄 Iniciando carga de iconos SVG...")
-      
+
       // Cargar todas las imágenes en paralelo
       const iconPromises = [
         loadImage("warehouse", "/icons/warehouse.svg"),
@@ -414,39 +484,39 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         ctx.strokeStyle = route.color
         ctx.lineWidth = 2
         ctx.beginPath()
-        
+
         // Dibujar la línea entre waypoints
         const startX = route.waypoints[0].x * zoom + pan.x
         const startY = (50 - route.waypoints[0].y) * zoom + pan.y
         ctx.moveTo(startX, startY)
-        
+
         for (let i = 1; i < route.waypoints.length; i++) {
           const x = route.waypoints[i].x * zoom + pan.x
           const y = (50 - route.waypoints[i].y) * zoom + pan.y
           ctx.lineTo(x, y)
         }
-        
+
         ctx.stroke()
-        
+
         // Dibujar pequeñas flechas de dirección en la ruta
         for (let i = 1; i < route.waypoints.length; i++) {
-          const prevX = route.waypoints[i-1].x * zoom + pan.x
-          const prevY = (50 - route.waypoints[i-1].y) * zoom + pan.y
+          const prevX = route.waypoints[i - 1].x * zoom + pan.x
+          const prevY = (50 - route.waypoints[i - 1].y) * zoom + pan.y
           const x = route.waypoints[i].x * zoom + pan.x
           const y = (50 - route.waypoints[i].y) * zoom + pan.y
-          
+
           // Punto medio donde dibujar la flecha
           const midX = (prevX + x) / 2
           const midY = (prevY + y) / 2
-          
+
           // Ángulo de la línea
           const angle = Math.atan2(y - prevY, x - prevX)
-          
+
           // Dibujar la flecha
           ctx.save()
           ctx.translate(midX, midY)
           ctx.rotate(angle)
-          
+
           // Triángulo
           ctx.beginPath()
           ctx.moveTo(5, 0)
@@ -455,7 +525,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           ctx.closePath()
           ctx.fillStyle = route.color
           ctx.fill()
-          
+
           ctx.restore()
         }
       }
@@ -467,57 +537,57 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
       const fromY = (50 - road.from.y) * zoom + pan.y
       const toX = road.to.x * zoom + pan.x
       const toY = (50 - road.to.y) * zoom + pan.y
-      
+
       // Intentar usar la imagen SVG para el bloqueo
       const midX = (fromX + toX) / 2;
       const midY = (fromY + toY) / 2;
-      
+
       // Calcular ángulo de la línea
       const roadAngle = Math.atan2(toY - fromY, toX - fromX);
-      
+
       // Dibujar la línea bloqueada con efecto de barricada
       ctx.beginPath();
       ctx.moveTo(fromX, fromY);
       ctx.lineTo(toX, toY);
-      
+
       // Efecto de gradiente para la línea
       const gradient = ctx.createLinearGradient(fromX, fromY, toX, toY);
       gradient.addColorStop(0, "#ef4444");      // Rojo al inicio
       gradient.addColorStop(0.5, "#fca5a5");    // Rojo más claro en medio
       gradient.addColorStop(1, "#ef4444");      // Rojo al final
-      
+
       ctx.strokeStyle = gradient;
       ctx.lineWidth = 5 * (zoom / 15);
-      
+
       // Patrón de línea más estético
       ctx.setLineDash([8 * (zoom / 15), 4 * (zoom / 15)]);
       ctx.stroke();
       ctx.setLineDash([]); // Restaurar línea sólida
-      
+
       // Dibujar símbolo de bloqueo en el punto medio, con rotación según ángulo de la carretera
       ctx.save();
       ctx.translate(midX, midY);
       ctx.rotate(roadAngle);
-      
+
       // Intentar usar el SVG para el bloqueo
       const blockSvgSize = 24 * (zoom / 15);
       const blockImgLoaded = iconImages.current["blockedRoad"];
-      
+
       if (blockImgLoaded) {
         // Dibujar el SVG de bloqueo
         ctx.shadowColor = "rgba(0,0,0,0.3)";
         ctx.shadowBlur = 5 * (zoom / 15);
         ctx.shadowOffsetX = 2 * (zoom / 15);
         ctx.shadowOffsetY = 2 * (zoom / 15);
-        
+
         ctx.drawImage(
-          blockImgLoaded, 
-          -blockSvgSize / 2, 
-          -blockSvgSize / 2, 
-          blockSvgSize, 
+          blockImgLoaded,
+          -blockSvgSize / 2,
+          -blockSvgSize / 2,
+          blockSvgSize,
           blockSvgSize
         );
-        
+
         ctx.shadowColor = "transparent";
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
@@ -527,30 +597,30 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         // Fondo circular con efecto de resplandor
         const glowRadius = 16 * (zoom / 15);
         const innerRadius = 12 * (zoom / 15);
-        
+
         // Resplandor exterior
         const glowGradient = ctx.createRadialGradient(0, 0, innerRadius * 0.7, 0, 0, glowRadius);
         glowGradient.addColorStop(0, "rgba(239, 68, 68, 0.7)");
         glowGradient.addColorStop(1, "rgba(239, 68, 68, 0)");
-        
+
         ctx.fillStyle = glowGradient;
         ctx.beginPath();
         ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
         ctx.fill();
-        
+
         // Círculo rojo
         ctx.beginPath();
         ctx.arc(0, 0, innerRadius, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(239, 68, 68, 0.7)";
         ctx.fill();
-        
+
         // Borde del círculo
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 2 * (zoom / 15);
         ctx.beginPath();
         ctx.arc(0, 0, innerRadius, 0, Math.PI * 2);
         ctx.stroke();
-        
+
         // Símbolo de bloqueo (X)
         ctx.strokeStyle = "#ffffff";
         ctx.lineWidth = 3 * (zoom / 15);
@@ -562,9 +632,9 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         ctx.lineTo(-symbolSize, symbolSize);
         ctx.stroke();
       }
-      
+
       ctx.restore(); // Restaurar el contexto (quitar rotación)
-      
+
       // Dibujar etiqueta si está seleccionada con un estilo mejorado
       if (selectedBlockedRoad?.id === road.id) {
         // Tamaño de texto basado en zoom
@@ -572,13 +642,13 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         ctx.font = `${fontSize}px sans-serif`;
         const textWidth = ctx.measureText(road.label).width;
         const textPadding = 8 * (zoom / 15);
-        
+
         // Fondo de etiqueta con bordes redondeados
         ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
         const labelX = midX + 18 * (zoom / 15);
         const labelY = midY - 8 * (zoom / 15);
         const cornerRadius = 4 * (zoom / 15);
-        
+
         // Dibujar rectángulo redondeado
         ctx.beginPath();
         ctx.moveTo(labelX + cornerRadius, labelY);
@@ -592,18 +662,18 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         ctx.quadraticCurveTo(labelX, labelY, labelX + cornerRadius, labelY);
         ctx.closePath();
         ctx.fill();
-        
+
         // Borde sutil
         ctx.strokeStyle = "rgba(239, 68, 68, 0.5)";
         ctx.lineWidth = 1;
         ctx.stroke();
-        
+
         // Texto de la etiqueta
         ctx.fillStyle = "#1f2937";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
         ctx.fillText(road.label, labelX + textPadding / 2, midY);
-        
+
         // Línea conectora desde el símbolo a la etiqueta
         ctx.strokeStyle = "rgba(239, 68, 68, 0.7)";
         ctx.lineWidth = 1.5 * (zoom / 15);
@@ -646,10 +716,10 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.shadowBlur = 4 * zoomScale
             ctx.shadowOffsetX = 1 * zoomScale
             ctx.shadowOffsetY = 2 * zoomScale
-            
+
             // Dibujar imagen
             ctx.drawImage(img, x - scaledSize / 2, y - scaledSize / 2, scaledSize, scaledSize)
-            
+
             // Resetear sombra después de dibujar
             ctx.shadowColor = "transparent"
             ctx.shadowBlur = 0
@@ -677,14 +747,14 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.shadowBlur = 6 * zoomScale;
             ctx.shadowOffsetX = 2 * zoomScale;
             ctx.shadowOffsetY = 3 * zoomScale;
-            
+
             // Base del edificio principal
             const scaledSize = 22 * scale * zoomScale;
             ctx.fillStyle = "#1e40af"; // Azul oscuro
             ctx.beginPath();
             ctx.rect(x - scaledSize, y - scaledSize * 0.8, scaledSize * 2, scaledSize * 1.6);
             ctx.fill();
-            
+
             // Techo
             ctx.fillStyle = "#1e3a8a"; // Azul más oscuro para el techo
             ctx.beginPath();
@@ -693,25 +763,25 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.lineTo(x, y - scaledSize * 1.5); // Punto del techo
             ctx.closePath();
             ctx.fill();
-            
+
             // Detalles de la fachada
             ctx.fillStyle = "#bfdbfe"; // Azul claro para ventanas
-            
+
             // Ventanas superiores (fila)
             const windowSize = scaledSize * 0.3;
             const windowSpacing = scaledSize * 0.5;
             for (let i = -1; i <= 1; i++) {
               ctx.beginPath();
-              ctx.rect(x + i * windowSpacing - windowSize/2, y - scaledSize * 0.5, windowSize, windowSize);
+              ctx.rect(x + i * windowSpacing - windowSize / 2, y - scaledSize * 0.5, windowSize, windowSize);
               ctx.fill();
             }
-            
+
             // Puerta principal
             ctx.fillStyle = "#1e3a8a"; // Azul oscuro para la puerta
             ctx.beginPath();
             ctx.rect(x - scaledSize * 0.3, y + scaledSize * 0.1, scaledSize * 0.6, scaledSize * 0.7);
             ctx.fill();
-            
+
             // Línea de base (suelo)
             ctx.strokeStyle = "#334155"; // Gris oscuro
             ctx.lineWidth = 2 * zoomScale;
@@ -719,13 +789,13 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.moveTo(x - scaledSize * 1.2, y + scaledSize * 0.8);
             ctx.lineTo(x + scaledSize * 1.2, y + scaledSize * 0.8);
             ctx.stroke();
-            
+
             // Resetear sombras
             ctx.shadowColor = "transparent";
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
-            
+
             // Bandera o indicador de planta principal
             ctx.fillStyle = "#ef4444"; // Rojo
             ctx.beginPath();
@@ -743,15 +813,15 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.shadowBlur = 5 * zoomScale;
             ctx.shadowOffsetX = 2 * zoomScale;
             ctx.shadowOffsetY = 2 * zoomScale;
-            
+
             const scaledSize = 18 * scale * zoomScale;
-            
+
             // Estructura principal - forma de almacén
             ctx.fillStyle = "#3b82f6"; // Azul
             ctx.beginPath();
             ctx.rect(x - scaledSize, y - scaledSize * 0.7, scaledSize * 2, scaledSize * 1.4);
             ctx.fill();
-            
+
             // Techo
             ctx.fillStyle = "#2563eb"; // Azul más oscuro
             ctx.beginPath();
@@ -761,13 +831,13 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.lineTo(x - scaledSize * 0.8, y - scaledSize * 1.2);
             ctx.closePath();
             ctx.fill();
-            
+
             // Puerta de garaje/almacén
             ctx.fillStyle = "#93c5fd"; // Azul más claro
             ctx.beginPath();
             ctx.rect(x - scaledSize * 0.6, y - scaledSize * 0.1, scaledSize * 1.2, scaledSize * 0.8);
             ctx.fill();
-            
+
             // Líneas horizontales de la puerta
             ctx.strokeStyle = "#2563eb"; // Azul
             ctx.lineWidth = 1 * zoomScale;
@@ -777,20 +847,20 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               ctx.lineTo(x + scaledSize * 0.6, y - scaledSize * 0.1 + i * scaledSize * 0.2);
               ctx.stroke();
             }
-            
+
             // Ventana circular en el techo
             ctx.fillStyle = "#bfdbfe"; // Azul muy claro
             ctx.beginPath();
             ctx.arc(x, y - scaledSize * 0.95, scaledSize * 0.15, 0, Math.PI * 2);
             ctx.fill();
-            
+
             // Marco de la ventana
             ctx.strokeStyle = "#2563eb";
             ctx.lineWidth = 1 * zoomScale;
             ctx.beginPath();
             ctx.arc(x, y - scaledSize * 0.95, scaledSize * 0.15, 0, Math.PI * 2);
             ctx.stroke();
-            
+
             // Cruz en la ventana
             ctx.beginPath();
             ctx.moveTo(x - scaledSize * 0.15, y - scaledSize * 0.95);
@@ -798,7 +868,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.moveTo(x, y - scaledSize * 0.95 - scaledSize * 0.15);
             ctx.lineTo(x, y - scaledSize * 0.95 + scaledSize * 0.15);
             ctx.stroke();
-            
+
             // Resetear sombras
             ctx.shadowColor = "transparent";
             ctx.shadowBlur = 0;
@@ -811,73 +881,72 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           if (!drawImage("customer", 32)) {
             // Si no se pudo usar SVG, usar una visualización mejorada
             const customerSize = 14 * scale * zoomScale;
-            
+
             // Aplicar sombras para dar profundidad
             ctx.shadowColor = "rgba(0,0,0,0.2)";
             ctx.shadowBlur = 4 * zoomScale;
             ctx.shadowOffsetX = 1 * zoomScale;
             ctx.shadowOffsetY = 2 * zoomScale;
-            
+
             // Base del edificio (rectángulo redondeado)
             ctx.fillStyle = "#f59e0b"; // Ámbar para clientes
             ctx.beginPath();
             const buildingWidth = customerSize * 1.8;
             const buildingHeight = customerSize * 1.6;
             const cornerRadius = 3 * zoomScale;
-            
+
             // Dibujar rectángulo redondeado
             ctx.beginPath();
-            ctx.moveTo(x - buildingWidth/2 + cornerRadius, y - buildingHeight/2);
-            ctx.lineTo(x + buildingWidth/2 - cornerRadius, y - buildingHeight/2);
-            ctx.quadraticCurveTo(x + buildingWidth/2, y - buildingHeight/2, x + buildingWidth/2, y - buildingHeight/2 + cornerRadius);
-            ctx.lineTo(x + buildingWidth/2, y + buildingHeight/2 - cornerRadius);
-            ctx.quadraticCurveTo(x + buildingWidth/2, y + buildingHeight/2, x + buildingWidth/2 - cornerRadius, y + buildingHeight/2);
-            ctx.lineTo(x - buildingWidth/2 + cornerRadius, y + buildingHeight/2);
-            ctx.quadraticCurveTo(x - buildingWidth/2, y + buildingHeight/2, x - buildingWidth/2, y + buildingHeight/2 - cornerRadius);
-            ctx.lineTo(x - buildingWidth/2, y - buildingHeight/2 + cornerRadius);
-            ctx.quadraticCurveTo(x - buildingWidth/2, y - buildingHeight/2, x - buildingWidth/2 + cornerRadius, y - buildingHeight/2);
+            ctx.moveTo(x - buildingWidth / 2 + cornerRadius, y - buildingHeight / 2);
+            ctx.lineTo(x + buildingWidth / 2 - cornerRadius, y - buildingHeight / 2);
+            ctx.quadraticCurveTo(x + buildingWidth / 2, y - buildingHeight / 2, x + buildingWidth / 2, y - buildingHeight / 2 + cornerRadius);
+            ctx.lineTo(x + buildingWidth / 2, y + buildingHeight / 2 - cornerRadius);
+            ctx.quadraticCurveTo(x + buildingWidth / 2, y + buildingHeight / 2, x + buildingWidth / 2 - cornerRadius, y + buildingHeight / 2);
+            ctx.lineTo(x - buildingWidth / 2 + cornerRadius, y + buildingHeight / 2);
+            ctx.quadraticCurveTo(x - buildingWidth / 2, y + buildingHeight / 2, x - buildingWidth / 2, y + buildingHeight / 2 - cornerRadius);
+            ctx.lineTo(x - buildingWidth / 2, y - buildingHeight / 2 + cornerRadius);
+            ctx.quadraticCurveTo(x - buildingWidth / 2, y - buildingHeight / 2, x - buildingWidth / 2 + cornerRadius, y - buildingHeight / 2);
             ctx.closePath();
             ctx.fill();
-            
+
             // Techo del edificio con forma de triángulo
             ctx.fillStyle = "#d97706"; // Ámbar más oscuro para el techo
             ctx.beginPath();
-            ctx.moveTo(x, y - buildingHeight/2 - customerSize * 0.8);
-            ctx.lineTo(x - buildingWidth/2 - customerSize * 0.3, y - buildingHeight/2);
-            ctx.lineTo(x + buildingWidth/2 + customerSize * 0.3, y - buildingHeight/2);
+            ctx.moveTo(x, y - buildingHeight / 2 - customerSize * 0.8);
+            ctx.lineTo(x - buildingWidth / 2 - customerSize * 0.3, y - buildingHeight / 2);
+            ctx.lineTo(x + buildingWidth / 2 + customerSize * 0.3, y - buildingHeight / 2);
             ctx.closePath();
             ctx.fill();
-            
+
             // Puerta
             ctx.fillStyle = "#7c2d12"; // Marrón oscuro
             ctx.beginPath();
             ctx.rect(x - customerSize * 0.4, y, customerSize * 0.8, customerSize * 0.8);
             ctx.fill();
-            
+
             // Ventanas (2 pequeños cuadrados)
             ctx.fillStyle = "#a5f3fc"; // Azul claro
             ctx.beginPath();
             ctx.rect(x - customerSize * 0.7, y - customerSize * 0.6, customerSize * 0.5, customerSize * 0.5);
             ctx.rect(x + customerSize * 0.2, y - customerSize * 0.6, customerSize * 0.5, customerSize * 0.5);
             ctx.fill();
-            
+
             // Resetear sombras
             ctx.shadowColor = "transparent";
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
           }
-          
+
           // If the order is overdue, show indicator
           const order = environmentData?.orders.find(o => o.id === element.id);
           if (order) {
             const customerSize = 14 * scale * zoomScale;
-            
+
             // Draw status indicator with improved style
-            const priorityColor = order.overdue ? "#ef4444" : // rojo para vencidos
-                                  order.delivered ? "#84cc16" : // verde lima para entregados
-                                  "#f59e0b"; // ámbar para pendientes
-            
+            const priorityColor = order.isOverdue ? "#ef4444" : // rojo para vencidos
+              "#f59e0b"; // ámbar para pendientes
+
             // Círculo de estado con mejor visualización
             ctx.fillStyle = priorityColor;
             ctx.shadowColor = "rgba(0,0,0,0.3)";
@@ -887,33 +956,22 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             ctx.beginPath();
             ctx.arc(x + customerSize * 1.2, y - customerSize, 7 * zoomScale, 0, Math.PI * 2);
             ctx.fill();
-            
+
             // Borde del indicador
             ctx.strokeStyle = "#ffffff";
             ctx.lineWidth = 2 * zoomScale;
             ctx.beginPath();
             ctx.arc(x + customerSize * 1.2, y - customerSize, 7 * zoomScale, 0, Math.PI * 2);
             ctx.stroke();
-            
+
             // Resetear sombras
             ctx.shadowColor = "transparent";
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
-            
-            // Si está entregado, añadir un checkmark
-            if (order.delivered) {
-              ctx.strokeStyle = "#ffffff";
-              ctx.lineWidth = 2.5 * zoomScale;
-              ctx.beginPath();
-              ctx.moveTo(x + customerSize * 1.2 - 3.5 * zoomScale, y - customerSize);
-              ctx.lineTo(x + customerSize * 1.2, y - customerSize + 3.5 * zoomScale);
-              ctx.lineTo(x + customerSize * 1.2 + 5 * zoomScale, y - customerSize - 3 * zoomScale);
-              ctx.stroke();
-            }
-            
+
             // Si está vencido, añadir un símbolo X
-            if (order.overdue) {
+            if (order.isOverdue) {
               ctx.strokeStyle = "#ffffff";
               ctx.lineWidth = 2.5 * zoomScale;
               ctx.beginPath();
@@ -923,9 +981,9 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               ctx.lineTo(x + customerSize * 1.2 - 3.5 * zoomScale, y - customerSize + 3.5 * zoomScale);
               ctx.stroke();
             }
-            
+
             // Si no está ni entregado ni vencido, mostrar exclamación
-            if (!order.delivered && !order.overdue) {
+            if (!order.isOverdue) {
               ctx.fillStyle = "#ffffff";
               ctx.beginPath();
               // Punto de exclamación
@@ -933,25 +991,25 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               ctx.fill();
               ctx.fillRect(x + customerSize * 1.2 - 1 * zoomScale, y - customerSize - 3.5 * zoomScale, 2 * zoomScale, 4 * zoomScale);
             }
-            
+
             // Mostrar demanda de GLP como texto pequeño
             ctx.fillStyle = "white";
             ctx.font = `bold ${8 * zoomScale}px sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            const glpText = order.glpRequest.toString();
-            
+            const glpText = order.glp?.requested?.toString() || "N/A";
+
             // Fondo semi-transparente para el texto
             const textWidth = ctx.measureText(glpText).width;
             ctx.fillStyle = "rgba(0,0,0,0.5)";
             const padding = 3 * zoomScale;
             ctx.fillRect(
-              x - textWidth/2 - padding, 
-              y + customerSize * 1.5 - padding, 
-              textWidth + padding * 2, 
+              x - textWidth / 2 - padding,
+              y + customerSize * 1.5 - padding,
+              textWidth + padding * 2,
               10 * zoomScale + padding * 2
             );
-            
+
             // Texto GLP
             ctx.fillStyle = "white";
             ctx.fillText(glpText, x, y + customerSize * 1.5 + 5 * zoomScale);
@@ -965,11 +1023,11 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             "west": "vehicleWest"
           }
           const vehicleImage = element.direction ? directionMap[element.direction] : "vehicleEast"
-          
+
           // Obtener el tipo de vehículo para colorear apropiadamente
           const vehicle = environmentData?.vehicles.find(v => v.id === element.id);
           const vehicleType = vehicle?.type || "";
-          
+
           // Determinar color basado en tipo de vehículo y estado
           let vehicleColor = "#10b981"; // Verde por defecto
           if (element.status !== "en-ruta") {
@@ -981,44 +1039,44 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             else if (vehicleType === "TC") vehicleColor = "#f59e0b"; // Ámbar
             else if (vehicleType === "TD") vehicleColor = "#8b5cf6"; // Púrpura
           }
-          
+
           if (!drawImage(vehicleImage, 36)) { // Increased base size
             console.log(`Dibujando vehículo ${element.id} con fallback en (${x}, ${y})`);
-            
+
             // Si no hay imagen, usar representación más moderna
             const radius = 15 * scale * zoomScale;
-            
+
             // Sombra para dar profundidad
             ctx.shadowColor = "rgba(0,0,0,0.3)";
             ctx.shadowBlur = 5 * zoomScale;
             ctx.shadowOffsetX = 2 * zoomScale;
             ctx.shadowOffsetY = 2 * zoomScale;
-            
+
             // Círculo base
             ctx.fillStyle = vehicleColor;
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fill();
-            
+
             // Borde
             ctx.strokeStyle = "rgba(255,255,255,0.6)";
             ctx.lineWidth = 1.5 * zoomScale;
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.stroke();
-            
+
             // Quitar sombra para la flecha
             ctx.shadowColor = "transparent";
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
-            
+
             // Dibujar flecha para dirección con estilo mejorado
             ctx.beginPath();
             ctx.fillStyle = "#ffffff";
-            
+
             const arrowSize = 6 * scale * zoomScale;
-            
+
             // Dibujar un triángulo en lugar de una flecha lineal
             if (element.direction === "north") {
               ctx.beginPath();
@@ -1045,9 +1103,9 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               ctx.lineTo(x + arrowSize * 0.5, y + arrowSize);
               ctx.closePath();
             }
-            
+
             ctx.fill();
-            
+
             // Añadir texto indicador del tipo de vehículo
             if (vehicleType) {
               ctx.fillStyle = "#ffffff";
@@ -1066,7 +1124,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
             const scaledSize = 15 * scale * zoomScale
             ctx.rect(x - scaledSize, y - scaledSize, scaledSize * 2, scaledSize * 2)
             ctx.fill()
-            
+
             ctx.fillStyle = "#ffffff"
             ctx.font = `${16 * scale * zoomScale}px sans-serif` // Font size scales with zoom
             ctx.textAlign = "center"
@@ -1083,7 +1141,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         const textWidth = ctx.measureText(element.label).width
         ctx.fillStyle = "rgba(255, 255, 255, 0.8)"
         ctx.fillRect(x + 18 * zoomScale, y - 10 * zoomScale, textWidth + 10, 20 * zoomScale) // Scale with zoom
-        
+
         // Texto de la etiqueta
         ctx.fillStyle = "#1f2937"
         ctx.textAlign = "left"
@@ -1136,23 +1194,23 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
       const fromY = (50 - road.from.y) * zoom + pan.y
       const toX = road.to.x * zoom + pan.x
       const toY = (50 - road.to.y) * zoom + pan.y
-      
+
       // Calcular distancia del punto a la línea
       const A = x - fromX
       const B = y - fromY
       const C = toX - fromX
       const D = toY - fromY
-      
+
       const dot = A * C + B * D
       const lenSq = C * C + D * D
       let param = -1
-      
+
       if (lenSq !== 0) {
         param = dot / lenSq
       }
-      
+
       let xx, yy
-      
+
       if (param < 0) {
         xx = fromX
         yy = fromY
@@ -1163,11 +1221,11 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         xx = fromX + param * C
         yy = fromY + param * D
       }
-      
+
       const dx = x - xx
       const dy = y - yy
       const distance = Math.sqrt(dx * dx + dy * dy)
-      
+
       return distance < 10 // Radio de detección para carreteras bloqueadas
     })
   }
@@ -1243,10 +1301,10 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
         <Button variant="outline" size="icon" onClick={handleZoomOut} title="Alejar">
           <Minus className="h-4 w-4" />
         </Button>
-        <Button 
-          variant="outline" 
-          size="icon" 
-          onClick={() => setPan({ x: 0, y: 0 })} 
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setPan({ x: 0, y: 0 })}
           title="Restablecer vista"
         >
           <RefreshCw className="h-4 w-4" />
@@ -1295,7 +1353,7 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           </p>
         </div>
       )}
-      
+
       {/* Estado de carga */}
       {isLoading && !simulationTime && (
         <div className="absolute top-4 left-4 bg-white/90 p-3 rounded-md shadow-sm backdrop-blur-sm">
@@ -1305,16 +1363,16 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           </div>
         </div>
       )}
-      
+
       {/* Error de carga */}
       {dataError && (
         <div className="absolute top-20 left-4 bg-red-50 text-red-700 p-3 rounded-md shadow-sm border border-red-200">
           <div className="flex items-center">
             <AlertTriangle className="mr-2 h-4 w-4" />
             <p className="text-sm">{dataError}</p>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               className="ml-2 text-xs border-red-300 hover:bg-red-100"
               onClick={() => setDataError(null)}
             >
@@ -1368,10 +1426,10 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               {selectedElement.type === "package" && <Package className="h-4 w-4" />}
               {selectedElement.label}
             </h3>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-6 w-6 p-0" 
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
               onClick={() => setSelectedElement(null)}
             >
               ×
@@ -1380,13 +1438,13 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
           <p className="text-xs text-muted-foreground">
             Coordenadas: ({selectedElement.x}, {selectedElement.y})
           </p>
-          
+
           {selectedElement.details && (
             <div className="mt-2 text-xs border-t pt-2">
               <p className="text-muted-foreground">{selectedElement.details}</p>
             </div>
           )}
-          
+
           {selectedElement.type === "vehicle" && (
             <div className="mt-2 space-y-2">
               <div className="grid grid-cols-2 gap-2">
@@ -1401,32 +1459,38 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               </div>
               <div className="border-t pt-2 text-xs space-y-1">
                 <h4 className="font-medium">Detalles adicionales:</h4>
-                <p className="flex justify-between">
-                  <span>Tipo:</span> 
-                  <span className="font-medium">{environmentData?.vehicles.find(v => v.id === selectedElement.id)?.type}</span>
-                </p>
-                <p className="flex justify-between">
-                  <span>Combustible:</span> 
-                  <span className="font-medium">
-                    {environmentData?.vehicles.find(v => v.id === selectedElement.id)?.fuel.toFixed(2)} L
-                  </span>
-                </p>
-                <p className="flex justify-between">
-                  <span>GLP:</span> 
-                  <span className="font-medium">
-                    {environmentData?.vehicles.find(v => v.id === selectedElement.id)?.glp} unidades
-                  </span>
-                </p>
-                <p className="flex justify-between">
-                  <span>Estado:</span> 
-                  <span className={`font-medium ${selectedElement.status === "en-ruta" ? "text-green-600" : "text-red-600"}`}>
-                    {selectedElement.status === "en-ruta" ? "En ruta" : "Averiado"}
-                  </span>
-                </p>
+                {environmentData?.vehicles.find(v => v.id === selectedElement.id) && (
+                  <>
+                    <p className="flex justify-between">
+                      <span>Tipo:</span>
+                      <span className="font-medium">{environmentData?.vehicles.find(v => v.id === selectedElement.id)?.type}</span>
+                    </p>
+                    <p className="flex justify-between">
+                      <span>Combustible:</span>
+                      <span className="font-medium">
+                        {environmentData?.vehicles.find(v => v.id === selectedElement.id)?.fuel.current.toFixed(2)} / {environmentData?.vehicles.find(v => v.id === selectedElement.id)?.fuel.capacity.toFixed(2)} L
+                        ({environmentData?.vehicles.find(v => v.id === selectedElement.id)?.fuel.percentage.toFixed(1)}%)
+                      </span>
+                    </p>
+                    <p className="flex justify-between">
+                      <span>GLP:</span>
+                      <span className="font-medium">
+                        {environmentData?.vehicles.find(v => v.id === selectedElement.id)?.glp.current} / {environmentData?.vehicles.find(v => v.id === selectedElement.id)?.glp.capacity} unidades
+                        ({environmentData?.vehicles.find(v => v.id === selectedElement.id)?.glp.percentage.toFixed(1)}%)
+                      </span>
+                    </p>
+                    <p className="flex justify-between">
+                      <span>Estado:</span>
+                      <span className={`font-medium ${selectedElement.status === "en-ruta" ? "text-green-600" : "text-red-600"}`}>
+                        {selectedElement.status === "en-ruta" ? "En ruta" : "Averiado"}
+                      </span>
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}
-          
+
           {(selectedElement.type === "customer" || selectedElement.type === "warehouse" || selectedElement.type === "mainWarehouse") && (
             <div className="mt-2">
               <Button variant="outline" size="sm" className="w-full text-xs">
@@ -1446,20 +1510,20 @@ export function SimulationMap({ onTimeUpdate }: SimulationMapProps) {
               <Ban className="h-4 w-4 text-red-500" />
               {selectedBlockedRoad.label}
             </h3>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-6 w-6 p-0" 
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
               onClick={() => setSelectedBlockedRoad(null)}
             >
               ×
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Desde: ({selectedBlockedRoad.from.x}, {selectedBlockedRoad.from.y}) 
+            Desde: ({selectedBlockedRoad.from.x}, {selectedBlockedRoad.from.y})
             Hasta: ({selectedBlockedRoad.to.x}, {selectedBlockedRoad.to.y})
           </p>
-          
+
           {selectedBlockedRoad.details && (
             <div className="mt-2 text-xs border-t pt-2">
               <p className="text-muted-foreground">{selectedBlockedRoad.details}</p>
